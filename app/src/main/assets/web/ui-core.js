@@ -19,7 +19,7 @@
     if(old.count>lineLimit||current.count>lineLimit){
       let ap=0,bp=0,prefix=0,ae=old.text.length,be=current.text.length,suffix=0;
       const lineEnd=(text,pos)=>{const end=text.indexOf('\n',pos);return end<0?text.length:end+1;};
-      const lineStart=(text,end)=>text.lastIndexOf('\n',end-(text[end-1]==='\n'?2:1))+1;
+      const lineStart=(text,end)=>end<=1?0:text.lastIndexOf('\n',end-(text[end-1]==='\n'?2:1))+1;
       while(ap<ae&&bp<be){const ax=lineEnd(old.text,ap),bx=lineEnd(current.text,bp);if(old.text.slice(ap,ax)!==current.text.slice(bp,bx))break;ap=ax;bp=bx;prefix++;}
       while(ap<ae&&bp<be){const ax=lineStart(old.text,ae),bx=lineStart(current.text,be);if(old.text.slice(ax,ae)!==current.text.slice(bx,be))break;ae=ax;be=bx;suffix++;}
       const leading=Math.min(context,prefix),trailing=Math.min(context,suffix);
