@@ -558,7 +558,7 @@ public final class Engine {
         io.execute(() -> {
             try {
                 if (sessionStore.recoveryRequired() && action.startsWith("chat.") && !action.equals("chat.stop"))
-                    throw new IOException(t("대화 기록 복구가 필요합니다. 원본은 보존되어 있습니다."));
+                    throw new IOException(t("대화 기록을 저장할 수 없습니다. 복구가 필요합니다. 원본은 보존되어 있습니다."));
                 if (Set.of("terminal.run", "files.mutate", "changes.restore", "recovery.restore").contains(action) && (!roomLeases.isEmpty() || (roomCommand != null && roomCommand.isAlive())))
                     throw new IOException(t("초대한 에이전트의 작업을 중지한 뒤 파일이나 명령을 실행해 주세요."));
                 switch (action) {
