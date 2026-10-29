@@ -96,22 +96,6 @@ def run_terminal(argv, env, output, json_input=True, columns=80, input_result=No
     import pty
     import struct
     import termios
-    master, slave = pty.openpty()
-    settings = termios.tcgetattr(slave)
-    settings[3] &= ~termios.ECHO
-    termios.tcsetattr(slave, termios.TCSANOW, settings)
-    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, columns, 0, 0))
-    env = {**env, 'TERM': 'xterm-256color', 'COLUMNS': str(columns), 'LINES': '24'}
-    try:
-        process = subprocess.Popen(argv, env=env, stdin=slave, stdout=slave, stderr=slave,
-                                   start_new_session=True,
-                                   preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
-    except BaseException:
-        os.close(master)
-        raise
-    finally:
-        os.close(slave)
-    os.set_blocking(master, False)
     stopping_at = None
 
     def stop(*_):
@@ -120,6 +104,33 @@ def run_terminal(argv, env, output, json_input=True, columns=80, input_result=No
             stopping_at = time.monotonic()
 
     previous = signal.signal(signal.SIGTERM, stop)
+    # Own TERM before creating any child, including the interval inside Popen.
+    # A stop arriving there is remembered and forwarded as soon as setup returns.
+    master = slave = process = None
+    try:
+        master, slave = pty.openpty()
+        settings = termios.tcgetattr(slave)
+        settings[3] &= ~termios.ECHO
+        termios.tcsetattr(slave, termios.TCSANOW, settings)
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, columns, 0, 0))
+        env = {**env, 'TERM': 'xterm-256color', 'COLUMNS': str(columns), 'LINES': '24'}
+        try:
+            process = subprocess.Popen(argv, env=env, stdin=slave, stdout=slave, stderr=slave,
+                                       start_new_session=True,
+                                       preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
+        finally:
+            os.close(slave)
+            slave = None
+        os.set_blocking(master, False)
+    except BaseException:
+        if process is not None:
+            try: os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
+            process.wait()
+        if master is not None: os.close(master)
+        if slave is not None: os.close(slave)
+        signal.signal(signal.SIGTERM, previous)
+        raise
     decoder = codecs.getincrementaldecoder('utf-8')('replace')
 
     outgoing = bytearray()

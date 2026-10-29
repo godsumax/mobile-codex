@@ -179,6 +179,25 @@ run_terminal([sys.executable,'-c','import tty,time;tty.setraw(0);time.sleep(30)'
         results=[json.loads(line) for line in output.splitlines()]
         self.assertTrue(any(result.get('reason')=='input_queue_full' and not result['ok'] for result in results))
 
+    def test_stop_during_popen_cannot_orphan_a_new_child(self):
+        wrapper = '''import sys,os,signal,subprocess
+sys.path.insert(0,sys.argv[1])
+import terminal_io
+original=subprocess.Popen
+def launch(*args,**kwargs):
+ child=original(*args,**kwargs)
+ print(child.pid,flush=True)
+ os.kill(os.getpid(),signal.SIGTERM)
+ return child
+terminal_io.subprocess.Popen=launch
+terminal_io.run_terminal([sys.executable,'-c','import time;time.sleep(30)'],dict(os.environ),lambda text:None,json_input=False)
+'''
+        process=subprocess.Popen([sys.executable,'-c',wrapper,str(file.parent)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        self.addCleanup(self.cleanup,process)
+        output,error=process.communicate(timeout=5)
+        self.assertEqual(process.returncode,0,error)
+        self.assertFalse(self.alive(int(output.strip())))
+
     @unittest.skipUnless(Path('/proc/self/fd').exists(), 'Linux descriptor accounting')
     def test_repeated_exit_does_not_leak_descriptors(self):
         before=len(list(Path('/proc/self/fd').iterdir()))
