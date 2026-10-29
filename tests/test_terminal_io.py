@@ -117,6 +117,21 @@ class TerminalBackpressureTests(unittest.TestCase):
         except ProcessLookupError:
             return False
 
+    def own_group(self, pids):
+        # Also clean up on assertion/timeout failures. Check process start times
+        # before signalling so test cleanup cannot target a recycled PID/PGID.
+        def identity(pid):
+            try: return Path(f'/proc/{pid}/stat').read_text().split(') ',1)[1].split()[19]
+            except (FileNotFoundError, ProcessLookupError): return None
+        identities={pid:identity(pid) for pid in pids}
+        def cleanup():
+            for pid, started in identities.items():
+                if started is not None and identity(pid)==started:
+                    try:
+                        if os.getpgid(pid)==pids[0]: os.killpg(pids[0],signal.SIGKILL);return
+                    except ProcessLookupError: pass
+        self.addCleanup(cleanup)
+
     def test_full_pipe_term_ignored_large_output_duplicate_stop_and_group_cleanup(self):
         outsider = subprocess.Popen([sys.executable, '-c', 'import time;time.sleep(30)'])
         self.addCleanup(lambda: (outsider.terminate(), outsider.wait(timeout=3)))
@@ -129,6 +144,7 @@ while True: os.write(1,b'x'*8192)
 ''')
         ready = process.stdout.readline().decode().strip().split(':')
         pids = [int(value) for value in ready[1:]]
+        self.own_group(pids)
         drained = threading.Thread(target=lambda: process.stdout.read(), daemon=True); drained.start()
         def fill():
             try:
@@ -195,6 +211,7 @@ terminal_io.run_terminal([sys.executable,'-c','import time;time.sleep(30)'],dict
         process=subprocess.Popen([sys.executable,'-c',wrapper,str(file.parent)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         self.addCleanup(self.cleanup,process)
         output,error=process.communicate(timeout=5)
+        if output.strip(): self.own_group([int(output.strip())])
         self.assertEqual(process.returncode,0,error)
         self.assertFalse(self.alive(int(output.strip())))
 
